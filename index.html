@@ -798,6 +798,10 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
     </div>
     <div class="hub-nav-actions">
       <span class="hub-nav-user" id="navUser"></span>
+      <button class="nav-btn hidden" id="adminHomeBtn" onclick="loadAdminHome()" style="background:rgba(168,85,247,.15);border-color:rgba(168,85,247,.4);color:#c084fc;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Admin Home
+      </button>
       <button class="nav-btn hidden" id="adminBtn" onclick="showAdminModal()" style="background:rgba(168,85,247,.15);border-color:rgba(168,85,247,.4);color:#c084fc;">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Admin
@@ -1186,6 +1190,10 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
           <div id="envOptionsListVms"></div>
         </div>
       </div>
+      <button class="nav-btn hidden" id="vmsAdminHomeBtn" onclick="loadAdminHome()" style="background:rgba(168,85,247,.15);border-color:rgba(168,85,247,.4);color:#c084fc;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Admin Home
+      </button>
       <button class="nav-btn" onclick="doSignOut()">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Sign Out
@@ -1605,7 +1613,12 @@ async function enterHub() {
   document.getElementById('navUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
   document.getElementById('vmsNavUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
 
-  if (isAdmin) document.getElementById('adminBtn').classList.remove('hidden');
+  if (isAdmin) {
+    document.getElementById('adminBtn').classList.remove('hidden');
+    document.getElementById('adminHomeBtn').classList.remove('hidden');
+    const vmsBtn = document.getElementById('vmsAdminHomeBtn');
+    if (vmsBtn) vmsBtn.classList.remove('hidden');
+  }
 
   // Fetch team assignments
   const { data: teams } = await sb.from('user_teams').select('team').eq('user_id', currentUser.id);
