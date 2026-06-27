@@ -1271,6 +1271,10 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
             <div class="ah-section-title">Team Overview</div>
             <div class="ah-section-h2">Your Team Members</div>
           </div>
+          <button class="add-user-btn" onclick="openAddUserFromHome()" style="background:#a855f7;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="7" r="4" stroke="#fff" stroke-width="2"/><line x1="19" y1="8" x2="19" y2="14" stroke="#fff" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="11" x2="16" y2="11" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+            Add Team Member
+          </button>
         </div>
         <div id="ahTeamBlocks">
           <div style="color:var(--gray-500);font-size:13px;">Loading team members…</div>
@@ -1292,22 +1296,6 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
           <input type="text" id="ahReminderInput" placeholder="Add a reminder…" onkeydown="if(event.key==='Enter')addReminder()"/>
           <input type="date" id="ahReminderDate" class="ah-add-reminder-date"/>
           <button class="ah-add-btn" onclick="addReminder()">Add</button>
-        </div>
-      </div>
-
-      <!-- YOUR STATS -->
-      <div class="ah-section">
-        <div class="ah-section-header">
-          <div>
-            <div class="ah-section-title">Your Profile</div>
-            <div class="ah-section-h2">Your Development Stats</div>
-          </div>
-        </div>
-        <div class="ah-stats-grid" id="ahStatsGrid">
-          <div class="ah-stat-card"><div class="ah-stat-label">Current Level</div><div class="ah-stat-val" id="ahStatLevel">—</div><div class="ah-stat-sub" id="ahStatLevelSub"></div></div>
-          <div class="ah-stat-card"><div class="ah-stat-label">Last Review</div><div class="ah-stat-val" id="ahStatLast">—</div><div class="ah-stat-sub"></div></div>
-          <div class="ah-stat-card"><div class="ah-stat-label">Next Review</div><div class="ah-stat-val" id="ahStatNext">—</div><div class="ah-stat-sub" id="ahStatNextSub"></div></div>
-          <div class="ah-stat-card"><div class="ah-stat-label">Goals on Track</div><div class="ah-stat-val" id="ahStatGoals">—</div><div class="ah-stat-sub">of 3 goals</div></div>
         </div>
       </div>
 
@@ -1495,9 +1483,26 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
       <div class="admin-field" style="margin-top:12px;"><label>Express Email</label><input type="email" id="nu-email" placeholder="name@expresspros.com"/></div>
       <div class="admin-field" style="margin-top:12px;"><label>Temporary Password</label><input type="text" id="nu-pw" value="Relay2026!"/><span class="modal-hint">They can change this after first login.</span></div>
       <div class="admin-field" style="margin-top:12px;"><label>Job Title</label><input type="text" id="nu-title" placeholder="e.g. AR Specialist I"/></div>
-      <div class="admin-field" style="margin-top:12px;"><label>Team</label><select id="nu-team" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:6px;font-family:Inter,sans-serif;font-size:13px;color:var(--navy);background:#fff;outline:none;"><option>Accounts Receivable</option></select></div>
+      <div class="admin-field" style="margin-top:12px;"><label>Team</label><select id="nu-team" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:6px;font-family:Inter,sans-serif;font-size:13px;color:var(--navy);background:#fff;outline:none;">
+                  <option value="Accounts Receivable">Accounts Receivable</option>
+                  <option value="VMS">VMS Accounting</option>
+                </select></div>
       <div class="admin-field" style="margin-top:12px;"><label>Direct Supervisor</label><input type="text" id="nu-sup" placeholder="e.g. Brenda Killgore"/></div>
       <div class="admin-field" style="margin-top:12px;"><label>Office</label><input type="text" id="nu-office" value="Corporate HQ — Oklahoma City"/></div>
+      <div class="admin-field" style="margin-top:12px;">
+        <label>Additional Environment Access</label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);cursor:pointer;">
+            <input type="checkbox" id="nu-env-ar" value="Accounts Receivable" style="width:16px;height:16px;accent-color:#a855f7;"/>
+            Accounts Receivable
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);cursor:pointer;">
+            <input type="checkbox" id="nu-env-vms" value="VMS" style="width:16px;height:16px;accent-color:#a855f7;"/>
+            VMS Accounting
+          </label>
+        </div>
+        <span class="modal-hint">Check any additional teams beyond their primary team above. Leave unchecked for single-team access.</span>
+      </div>
       <div class="modal-error" id="addUserErr"></div>
       <div class="modal-success" id="addUserOk"></div>
       <div class="modal-actions">
@@ -1725,7 +1730,6 @@ async function loadAdminHome() {
     buildAhEnvGrid(),
     buildAhTeamBlocks(),
     loadAhReminders(),
-    loadAhStats(),
   ]);
 }
 
@@ -2359,6 +2363,11 @@ async function saveProfile() {
 }
 
 // ── ADD USER ──────────────────────────────────────────
+function openAddUserFromHome() {
+  // Pre-clear and open the add user modal from admin home
+  openAddUser();
+}
+
 function openAddUser() {
   document.getElementById('addUserErr').style.display = 'none';
   document.getElementById('addUserOk').style.display = 'none';
