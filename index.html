@@ -1637,8 +1637,8 @@ async function enterHub() {
   // Build env options
   buildEnvDropdowns();
 
-  // Show env switcher only if user is admin OR has multiple team assignments
-  if (isAdmin || userTeams.length > 1) {
+  // Show env switcher ONLY for admins
+  if (isAdmin) {
     document.getElementById('envSwitcher').classList.remove('hidden');
     const vmsEnvSw = document.getElementById('envSwitcherVms');
     if (vmsEnvSw) vmsEnvSw.classList.remove('hidden');
