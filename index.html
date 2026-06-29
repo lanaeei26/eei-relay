@@ -15,6 +15,7 @@ async function openScheduleModal() {
   // Populate member dropdown
   const { data: users } = await sb.from('users').select('id,first_name,last_name').order('last_name');
   const sel = document.getElementById('sm-member');
+  if (!sel) { toast('Schedule modal not found.', true); return; }
   sel.innerHTML = '<option value="" disabled selected>Select team member…</option>' +
     (users||[]).map(u => `<option value="${u.id}">${u.first_name} ${u.last_name}</option>`).join('');
   document.getElementById('smErr').style.display = 'none';
@@ -298,38 +299,17 @@ async function loadMemberMeetings() {
 
 // ── MANAGE PD (from admin home) ───────────────────────────────────────────────
 function showManagePD() {
+  // Admin is already authenticated - go straight to PD management
   show('screen-admin');
-  showAdminTeam();
+  document.getElementById('adminTeamView').style.display = 'block';
+  document.getElementById('adminMemberView').style.display = 'none';
+  document.getElementById('adminBackBtn').style.display = 'none';
   loadAdminGrid();
 }
 
-// Update loadMyTrack to also load meetings
-const _origLoadMyTrack = loadMyTrack;
-async function loadMyTrack() {
-  // Call the original but also load meetings
-  const gateWrap = document.getElementById('ptGateWrap');
-  if (gateWrap) gateWrap.style.display = 'none';
-  document.getElementById('ptNoData').style.display = 'none';
-  document.getElementById('ptDashboard').style.display = 'none';
-  const { data: pd, error } = await sb.from('profiles').select('*').eq('user_id', currentUser.id).single();
-  if (!pd || !pd.name) {
-    document.getElementById('ptNoData').style.display = 'block';
-    await loadMemberMeetings();
-    return;
-  }
-  renderTrack(pd);
-  bulletinUserId = currentUser.id;
-  await Promise.all([loadBulletin(currentUser.id), loadMemberMeetings()]);
-  document.getElementById('ptDashboard').style.display = 'block';
-}
+// loadMyTrack is defined above with meetings support built in
 
-// Update loadAdminHome to also start notif polling and load calendar
-const _origLoadAdminHome = loadAdminHome;
-async function loadAdminHome() {
-  await _origLoadAdminHome();
-  startNotifPolling();
-  await loadAhCalendar();
-}
+// loadAdminHome extended below in original function
 
 </script>
 <style>
@@ -2064,7 +2044,10 @@ async function loadAdminHome() {
   await Promise.all([
     buildAhEnvGrid(),
     buildAhTeamBlocks(),
+    loadAhCalendar(),
   ]);
+  startNotifPolling();
+  await loadNotificationsCount();
 }
 
 async function buildAhEnvGrid() {
