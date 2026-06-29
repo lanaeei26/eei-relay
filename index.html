@@ -2069,6 +2069,7 @@ let userTeams = [];
 let currentEnv = 'Accounts Receivable';
 
 async function enterHub() {
+  try {
   const { data: profile } = await sb.from('users').select('*').eq('id', currentUser.id).single();
   currentProfile = profile;
 
@@ -2103,47 +2104,37 @@ async function enterHub() {
 
   }
 
-  // Admins go to admin home; regular users go to their hub
-  if (isAdmin) {
-    await loadAdminHome();
-  } else {
-    switchEnv(userTeams[0] || 'Accounts Receivable', false);
-    await loadMemberHome();
+    // Route
+    if (isAdmin) {
+      await loadAdminHome();
+    } else {
+      switchEnv(userTeams[0] || 'Accounts Receivable', false);
+      await loadMemberHome();
+    }
+  } catch(err) {
+    console.error('enterHub error:', err);
+    // Fallback: show the hub anyway
+    show('screen-ar-hub');
+    goTo('view-ar-home');
+  } finally {
+    // Always hide loading screen
+    document.getElementById('screen-loading')?.classList.remove('active');
   }
 }
 
 function buildEnvDropdowns() {
-  const allEnvs = ['Accounts Receivable', 'VMS'];
-  const makeOption = (env, containerId) => {
-    const cfg = ENV_CONFIG[env];
-    const hasAccess = userTeams.includes(env);
-    const isCurrent = env === currentEnv;
-    if (!cfg) return '';
-    return `<div class="env-option ${isCurrent ? 'active' : ''} ${!hasAccess ? 'disabled' : ''}"
-      onclick="${hasAccess ? `switchEnv('${env}')` : ''}"
-      style="${!hasAccess ? 'opacity:.4;cursor:not-allowed;' : ''}">
-      <div class="env-option-dot ${cfg.dot}"></div>
-      <div>
-        <div class="env-option-name">${cfg.label}</div>
-        <div class="env-option-tag ${isCurrent ? 'env-option-tag--active' : 'env-option-tag--cs'}">
-          ${isCurrent ? 'Current' : hasAccess ? 'Switch' : 'Coming Soon'}
-        </div>
-      </div>
-      <span class="env-option-check">✓</span>
-    </div>`;
-  };
-
-  const optionsHtml = allEnvs.map(e => makeOption(e, 'envOptionsList')).join('');
-  const el1 = document.getElementById('envOptionsList');
-  const el2 = document.getElementById('envOptionsListVms');
-  if (el1) el1.innerHTML = optionsHtml;
-  if (el2) el2.innerHTML = allEnvs.map(e => makeOption(e, 'envOptionsListVms')).join('');
+  // Env switcher removed - no-op
 }
 
 function switchEnv(envName, rebuild = true) {
-  currentEnv = envName;
-  const cfg = ENV_CONFIG[envName];
-  if (!cfg) return;
+  currentEnv = envName || 'Accounts Receivable';
+  const cfg = ENV_CONFIG[currentEnv];
+  if (!cfg) {
+    // Fallback to AR hub
+    show('screen-ar-hub');
+    goTo('view-ar-home');
+    return;
+  }
 
   // Hide all hub screens
   ['screen-ar-hub', 'screen-vms-hub'].forEach(id => {
