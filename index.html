@@ -1881,7 +1881,7 @@ function goTo(viewId) {
   const t = document.getElementById(viewId);
   if (t) t.classList.add('active');
   const isHome = viewId === 'view-ar-home';
-  document.getElementById('hubBackBtn').classList.toggle('hidden', isHome);
+  document.getElementById('hubBackBtn')?.classList.toggle('hidden', isHome);
   const bc = document.getElementById('hubBc');
   bc.className = 'hub-breadcrumb' + (isHome ? ' hidden' : '');
   if (!isHome) {
@@ -1955,10 +1955,9 @@ async function enterHub() {
   document.getElementById('vmsNavUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
 
   if (isAdmin) {
-    document.getElementById('adminBtn').classList.remove('hidden');
-    document.getElementById('adminHomeBtn').classList.remove('hidden');
-    const vmsBtn = document.getElementById('vmsAdminHomeBtn');
-    if (vmsBtn) vmsBtn.classList.remove('hidden');
+    // Show admin controls - use optional chaining in case elements don't exist
+    document.getElementById('adminHomeBtn')?.classList.remove('hidden');
+    document.getElementById('vmsAdminHomeBtn')?.classList.remove('hidden');
   }
 
   // Fetch team assignments
@@ -1975,7 +1974,7 @@ async function enterHub() {
 
   // Show env switcher ONLY for admins
   if (isAdmin) {
-    document.getElementById('envSwitcher').classList.remove('hidden');
+    document.getElementById('envSwitcher')?.classList.remove('hidden');
 
   }
 
@@ -2216,11 +2215,11 @@ async function loadAhStats() {
 }
 
 function toggleEnvDropdown() {
-  document.getElementById('envSwitcher').classList.toggle('open');
+  document.getElementById('envSwitcher')?.classList.toggle('open');
 }
 function toggleEnvDropdownVms() { /* removed */ }
 function closeEnvDropdowns() {
-  document.getElementById('envSwitcher').classList.remove('open');
+  document.getElementById('envSwitcher')?.classList.remove('open');
 
 }
 
@@ -2269,12 +2268,12 @@ function stepUI(n) {
 function suStep2() {
   const fn=document.getElementById('su-fn').value.trim(), ln=document.getElementById('su-ln').value.trim();
   const em=document.getElementById('su-email').value.trim(), pw=document.getElementById('su-pw').value, cpw=document.getElementById('su-cpw').value;
-  document.getElementById('su-email-err').classList.remove('show');
-  document.getElementById('su-pw-err').classList.remove('show');
+  document.getElementById('su-email-err')?.classList.remove('show');
+  document.getElementById('su-pw-err')?.classList.remove('show');
   if (!fn||!ln||!em||!pw||!cpw) { toast('Please fill in all fields.',true); return; }
-  if (!em.endsWith('@expresspros.com')) { document.getElementById('su-email-err').classList.add('show'); return; }
+  if (!em.endsWith('@expresspros.com')) { document.getElementById('su-email-err')?.classList.add('show'); return; }
   if (pw.length<8) { toast('Password must be at least 8 characters.',true); return; }
-  if (pw!==cpw) { document.getElementById('su-pw-err').classList.add('show'); return; }
+  if (pw!==cpw) { document.getElementById('su-pw-err')?.classList.add('show'); return; }
   stepUI(2);
 }
 function suBack1() { stepUI(1); }
