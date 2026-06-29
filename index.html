@@ -311,6 +311,136 @@ function showManagePD() {
 
 // loadAdminHome extended below in original function
 
+
+// ══ MEMBER HOME ═══════════════════════════════════════════════════════════════
+async function loadMemberHome() {
+  if (isAdmin) return; // admins have their own home
+
+  // Show member-only sections
+  ['memberPdSummary','memberMeetingsHome','memberTaskSection'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'block';
+  });
+
+  await Promise.all([
+    loadHomePdSummary(),
+    loadHomeMeetings(),
+    loadTasks(),
+  ]);
+}
+
+async function loadHomePdSummary() {
+  const { data: pd } = await sb.from('profiles').select('*').eq('user_id', currentUser.id).single();
+  const nameEl = document.getElementById('homePdName');
+  const lvEl = document.getElementById('homePdLevel');
+  const nextEl = document.getElementById('homePdNext');
+
+  if (!pd || !pd.name) {
+    const card = document.getElementById('homePdCard');
+    if (card) card.innerHTML = '<div style="flex:1;"><div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#5dd2f7;margin-bottom:8px;">Personal Development Track</div><div style="font-size:15px;color:rgba(255,255,255,.6);">Your profile hasn't been set up yet. Check back soon!</div></div>';
+    return;
+  }
+
+  if (nameEl) nameEl.textContent = pd.name;
+  if (lvEl) {
+    const lvLabels = {1:'Level 1 — Developing',2:'Level 2 — Proficient',3:'Level 3 — Advanced'};
+    const lvBg = {1:'rgba(96,168,220,.3)',2:'rgba(0,150,214,.3)',3:'rgba(255,255,255,.15)'};
+    lvEl.textContent = lvLabels[pd.level] || '—';
+    lvEl.style.background = lvBg[pd.level] || 'rgba(255,255,255,.1)';
+    lvEl.style.color = '#fff';
+  }
+  if (nextEl && pd.next_review_date) {
+    const days = Math.round((new Date(pd.next_review_date) - new Date()) / 86400000);
+    if (days < 0) nextEl.textContent = '⚠ Review overdue';
+    else if (days <= 30) nextEl.textContent = `⏰ Review in ${days} days`;
+    else nextEl.textContent = `Next review: ${pd.next_review_date}`;
+  }
+}
+
+async function loadHomeMeetings() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data: meetings } = await sb.from('pd_meetings')
+    .select('*').eq('member_user_id', currentUser.id)
+    .gte('scheduled_date', today).order('scheduled_date').order('scheduled_time');
+
+  const list = document.getElementById('homeMeetingsList');
+  if (!list) return;
+
+  if (!meetings || meetings.length === 0) {
+    list.innerHTML = '<div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:16px 20px;color:var(--gray-500);font-size:13px;font-style:italic;">No upcoming meetings at this time.</div>';
+    return;
+  }
+
+  const typeColors = {'1:1':{bg:'#e6f5fc',color:'var(--blue)',border:'var(--blue)'},'Review':{bg:'#f3e8ff',color:'#a855f7',border:'#a855f7'}};
+  list.innerHTML = meetings.map(m => {
+    const tc = typeColors[m.meeting_type] || typeColors['1:1'];
+    const dateF = new Date(m.scheduled_date + 'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:#fff;border:1px solid var(--gray-200);border-left:4px solid ${tc.border};border-radius:10px;margin-bottom:8px;">
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+          <span style="background:${tc.bg};color:${tc.color};font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:10px;">${m.meeting_type}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--navy);">${m.subject || m.meeting_type}</span>
+        </div>
+        <div style="font-size:12px;color:var(--gray-600);">${dateF} at ${m.scheduled_time}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══ TASKS ═════════════════════════════════════════════════════════════════════
+async function loadTasks() {
+  if (!currentUser) return;
+  const { data: tasks } = await sb.from('member_tasks')
+    .select('*').eq('user_id', currentUser.id)
+    .order('completed').order('due_date',{nullsFirst:false}).order('created_at');
+
+  const list = document.getElementById('taskList');
+  if (!list) return;
+
+  if (!tasks || tasks.length === 0) {
+    list.innerHTML = '<div style="color:var(--gray-500);font-size:13px;font-style:italic;padding:8px 0;">No tasks yet — add one below.</div>';
+    return;
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  list.innerHTML = tasks.map(t => {
+    const overdue = t.due_date && t.due_date < today && !t.completed;
+    const dateStr = t.due_date ? new Date(t.due_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+    return `<div class="task-item" id="task-${t.id}">
+      <div class="task-check ${t.completed ? 'done' : ''}" onclick="toggleTask('${t.id}',${t.completed})"></div>
+      <div class="task-content ${t.completed ? 'done' : ''}">${t.content}</div>
+      ${dateStr ? `<div class="task-date ${overdue ? 'overdue' : ''}">${overdue ? '⚠ ' : ''}${dateStr}</div>` : ''}
+      <button class="task-del" onclick="deleteTask('${t.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function addTask() {
+  const input = document.getElementById('taskInput');
+  const dateInput = document.getElementById('taskDate');
+  const content = input.value.trim();
+  if (!content) return;
+  const { error } = await sb.from('member_tasks').insert({
+    user_id: currentUser.id,
+    content,
+    due_date: dateInput.value || null,
+    completed: false,
+  });
+  if (error) { toast('Failed to add task.', true); return; }
+  input.value = ''; dateInput.value = '';
+  await loadTasks();
+}
+
+async function toggleTask(id, current) {
+  await sb.from('member_tasks').update({completed: !current}).eq('id', id);
+  await loadTasks();
+}
+
+async function deleteTask(id) {
+  await sb.from('member_tasks').delete().eq('id', id).eq('user_id', currentUser.id);
+  document.getElementById('task-' + id)?.remove();
+}
+
 </script>
 <style>
 /* ══ RESET & VARS ══ */
@@ -920,6 +1050,34 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
     .ah-env-grid, .ah-team-grid, .ah-stats-grid { grid-template-columns: 1fr; }
   }
 
+
+  /* ══ MEMBER TASK LIST ══ */
+  .task-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; background: #fff;
+    border: 1px solid var(--gray-200); border-radius: 10px;
+    transition: border-color .12s;
+  }
+  .task-item:hover { border-color: var(--blue); }
+  .task-check {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--gray-300); flex-shrink: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+  .task-check:hover { border-color: var(--blue); background: var(--blue-light); }
+  .task-check.done { border-color: var(--success); background: var(--success); }
+  .task-check.done::after { content: "✓"; color: #fff; font-size: 11px; font-weight: 900; }
+  .task-content { flex: 1; font-size: 13px; color: var(--navy); font-weight: 500; }
+  .task-content.done { text-decoration: line-through; color: var(--gray-400); }
+  .task-date { font-size: 11px; color: var(--gray-500); flex-shrink: 0; }
+  .task-date.overdue { color: #ef4444; font-weight: 700; }
+  .task-del { background: none; border: none; color: var(--gray-300); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+  .task-del:hover { color: #ef4444; background: #fef2f2; }
+
+  /* ══ HOME PD SUMMARY ══ */
+  #homePdCard { transition: box-shadow .15s; }
+
 </style>
 </head>
 <body>
@@ -1205,6 +1363,20 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
       </div>
     </div>
   </div>
+      
+      <!-- TASK LIST (non-admins only) -->
+      <div class="section-block" id="memberTaskSection" style="display:none;">
+        <div class="section-label">Personal</div>
+        <h2 style="font-size:21px;font-weight:800;color:var(--navy);margin-bottom:6px;">My Tasks</h2>
+        <div class="ar-divider"></div>
+        <div id="taskList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="taskInput" placeholder="Add a task…" onkeydown="if(event.key==='Enter')addTask()" style="flex:1;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;color:var(--text);outline:none;transition:border-color .15s;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--gray-200)'"/>
+          <input type="date" id="taskDate" style="padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;color:var(--text);outline:none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--gray-200)'"/>
+          <button onclick="addTask()" style="padding:10px 20px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">Add Task</button>
+        </div>
+      </div>
+
       <div class="hub-footer"><p>Express Employment International · AR Team · Internal Use Only</p><a href="https://www.expresspros.com" target="_blank">expresspros.com</a></div>
     </div>
     <div class="view" id="view-team-schedules">
@@ -1300,29 +1472,8 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
 
 
 
-    <!-- VIEW MY TRACK GATE BANNER -->
-    <div class="pt-gate-wrap" id="ptGateWrap">
-      <div class="pt-gate-card">
-        <div class="pt-gate-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="7" r="4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <div class="pt-gate-text">
-          <h3>Your Personal Development Track</h3>
-          <p>View your current level, supervisor feedback, goals, review notes, and upcoming check-ins — all in one place.</p>
-        </div>
-        <button class="pt-gate-btn" onclick="openMyTrack()">View My Track →</button>
-      </div>
-    </div>
 
-    <!-- SCHEDULE PD MEETING BUTTON -->
-    <div style="max-width:1080px;margin:0 auto;padding:0 40px;margin-top:14px;margin-bottom:8px;">
-      <button onclick="openRequestMeeting()" style="display:inline-flex;align-items:center;gap:8px;background:none;border:1.5px solid var(--blue);color:var(--blue);padding:9px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;transition:background .15s;" onmouseover="this.style.background='var(--blue-light)'" onmouseout="this.style.background='none'">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14v4M10 16h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        Request a PD Meeting
-      </button>
-    </div>
-
-    <!-- NO DATA STATE -->
+        <!-- NO DATA STATE -->
     <div id="ptNoData" style="display:none;margin:0 40px 40px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:12px;padding:32px;text-align:center;">
       <p style="color:var(--gray-600);font-size:14px;font-weight:600;">Your development profile hasn't been set up yet.<br/><span style="font-weight:400;font-size:13px;">Your supervisor will add your profile data — check back soon!</span></p>
     </div>
@@ -1769,19 +1920,7 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
     </div>
   </div>
 </div>
-<!-- Employee track modal -->
-<div class="modal-overlay" id="trackModal">
-  <div class="pw-modal-box">
-    <div class="pw-modal-icon" style="background:var(--blue-light);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" stroke="var(--blue)" stroke-width="2"/><path d="M7 11V7a5 5 0 0110 0v4" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-    <h4>Your Development Track</h4>
-    <p>This section contains your personal performance information. Sign in to view.</p>
-    <input class="pw-input" type="password" id="trackPw" placeholder="Enter your password" onkeydown="if(event.key==='Enter')checkTrack()"/>
-    <div class="pw-error" id="trackPwErr">Incorrect password. Please try again.</div>
-    <div class="pw-actions">
-      <button class="pw-cancel" onclick="closeModal('trackModal')">Cancel</button>
-      <button class="pw-submit" onclick="checkTrack()">View My Track</button>
-    </div>
-  </div>
+
 </div>
 <!-- Add user modal -->
 <div class="modal-overlay" id="addUserModal">
@@ -1868,7 +2007,13 @@ function goTo(viewId) {
     const labels = {'view-team-schedules':'Team Schedules','view-personal-development':'Personal Development'};
     document.getElementById('hubBcLabel').textContent = labels[viewId] || '';
   }
-  document.getElementById('hubContent').scrollTop = 0;
+  const hubContent = document.getElementById('hubContent');
+  if (hubContent) hubContent.scrollTop = 0;
+
+  // Auto-load PD when non-admin navigates there
+  if (viewId === 'view-personal-development' && !isAdmin) {
+    loadMyTrack();
+  }
 }
 
 // ── GATE ──────────────────────────────────────────────
@@ -1958,11 +2103,12 @@ async function enterHub() {
 
   }
 
-  // Admins go to admin home; regular users go to their env
+  // Admins go to admin home; regular users go to their hub
   if (isAdmin) {
     await loadAdminHome();
   } else {
     switchEnv(userTeams[0] || 'Accounts Receivable', false);
+    await loadMemberHome();
   }
 }
 
@@ -2295,500 +2441,61 @@ async function suSubmit() {
 }
 
 // ── PERSONAL TRACK ────────────────────────────────────
-function openMyTrack() { openModal('trackModal'); document.getElementById('trackPw').value=''; document.getElementById('trackPwErr').style.display='none'; }
-async function checkTrack() {
-  const pw = document.getElementById('trackPw').value;
-  if (!currentUser) return;
-  // For testing: accept the gate password OR the user's actual login password
-  if (pw === 'AR2026!') {
-    closeModal('trackModal');
-    await loadMyTrack();
-    return;
-  }
-  // Otherwise verify against their Supabase password
-  const { error } = await sb.auth.signInWithPassword({ email: currentUser.email, password: pw });
-  if (error) {
-    document.getElementById('trackPwErr').style.display = 'block';
-    document.getElementById('trackPw').value = '';
-    return;
-  }
-  closeModal('trackModal');
-  await loadMyTrack();
-}
+// openMyTrack: no longer needs password - called automatically
+function openMyTrack() { loadMyTrack(); }
 async function loadMyTrack() {
-  // Hide gate card
-  const gateWrap = document.getElementById('ptGateWrap');
-  if (gateWrap) gateWrap.style.display = 'none';
+  if (!currentUser) return;
+  const noData = document.getElementById('ptNoData');
+  const dash = document.getElementById('ptDashboard');
+  if (noData) noData.style.display = 'none';
+  if (dash) dash.style.display = 'none';
 
-  // Show loading state
-  document.getElementById('ptNoData').style.display = 'none';
-  document.getElementById('ptDashboard').style.display = 'none';
-
-  // Fetch profile from Supabase
   const { data: pd, error } = await sb.from('profiles').select('*').eq('user_id', currentUser.id).single();
-
-  if (error) {
-    console.error('Profile fetch error:', error);
-  }
+  if (error && error.code !== 'PGRST116') console.error('Profile error:', error);
 
   if (!pd || !pd.name) {
-    // No profile yet
-    document.getElementById('ptNoData').style.display = 'block';
+    if (noData) noData.style.display = 'block';
+    await loadMemberMeetings();
     return;
   }
-
-  // Profile found - render dashboard
   renderTrack(pd);
   bulletinUserId = currentUser.id;
-  await loadBulletin(currentUser.id);
-  document.getElementById('ptDashboard').style.display = 'block';
-}
-function renderTrack(pd) {
-  const lv = pd.level || 1;
-  document.getElementById('dashName').textContent = pd.name || '';
-  document.getElementById('dashTitle').textContent = pd.title || '';
-  document.getElementById('dashTitleInfo').textContent = pd.title || '—';
-  document.getElementById('dashHire').textContent = pd.hire_date || '—';
-  document.getElementById('dashLast').textContent = pd.last_review_date || '—';
-  document.getElementById('dashNext').textContent = pd.next_review_date || '—';
-  const lvEl = document.getElementById('dashLevel');
-  lvEl.textContent = LEVEL_LABELS[lv];
-  lvEl.className = 'pt-info-val pt-badge ' + LEVEL_BADGE[lv];
-  document.getElementById('dashS1').textContent = pd.strength_1 || '—';
-  document.getElementById('dashS2').textContent = pd.strength_2 || '—';
-  document.getElementById('dashGrow').textContent = pd.growth_area || '—';
-  document.getElementById('dashNotes1').textContent = pd.review_notes_1 || '—';
-  document.getElementById('dashNotes2').textContent = pd.review_notes_2 || '';
-  [1,2,3].forEach(n => {
-    const pct = pd['goal_'+n+'_pct'] || 0;
-    document.getElementById('dashG'+n+'N').textContent = pd['goal_'+n+'_name'] || '';
-    document.getElementById('dashG'+n+'P').textContent = pct + '%';
-    document.getElementById('dashG'+n+'T').textContent = pd['goal_'+n+'_target'] || '';
-    const bar = document.getElementById('dashG'+n+'B');
-    bar.style.width = pct + '%';
-    bar.style.background = pct===100 ? '#22c55e' : pct>=70 ? 'var(--blue)' : '#f59e0b';
-  });
-}
-function lockTrack() {
-  document.getElementById('ptDashboard').style.display = 'none';
-  document.getElementById('ptGateWrap').style.display = 'block';
+  if (dash) dash.style.display = 'block';
+  await Promise.all([loadBulletin(currentUser.id), loadMemberMeetings()]);
 }
 
-// ── BULLETIN ──────────────────────────────────────────
-async function loadBulletin(userId) {
-  const { data: posts } = await sb.from('bulletin_posts').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-  const list = document.getElementById('bulletinList');
-  if (!posts || posts.length === 0) {
-    list.innerHTML = '<div class="bulletin-empty">No posts yet — share a win or set a new goal!</div>';
-    return;
-  }
-  list.innerHTML = posts.map(p => {
-    const isAd = p.is_admin;
-    const date = new Date(p.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
-    return `<div class="bulletin-post ${isAd?'bulletin-post--admin':'bulletin-post--member'}" id="bp-${p.id}">
-      <div class="bulletin-post-header">
-        <span class="bulletin-post-author">${p.author_name}</span>
-        <div class="bulletin-post-meta">
-          ${isAd?'<span class="bulletin-admin-badge">Supervisor</span>':''}
-          <span class="bulletin-post-date">${date}</span>
-          ${isAdmin?`<button class="bulletin-del" onclick="deleteBulletin('${p.id}')">✕</button>`:''}</div>
-      </div>
-      <div class="bulletin-post-body">${p.content}</div>
-    </div>`;
-  }).join('');
-}
-async function postBulletin() {
-  const content = document.getElementById('bulletinText').value.trim();
-  if (!content || !bulletinUserId) return;
-  const authorName = isAdmin ? (currentProfile?.first_name || 'Supervisor') : ((currentProfile?.first_name||'')+' '+(currentProfile?.last_name||'')).trim();
-  const { error } = await sb.from('bulletin_posts').insert({ user_id: bulletinUserId, author_id: currentUser.id, author_name: authorName, is_admin: isAdmin, content });
-  if (error) { toast('Failed to post.', true); return; }
-  document.getElementById('bulletinText').value = '';
-  await loadBulletin(bulletinUserId);
-}
-async function deleteBulletin(id) {
-  if (!isAdmin) return;
-  await sb.from('bulletin_posts').delete().eq('id', id);
-  document.getElementById('bp-'+id)?.remove();
-}
-
-// ── ADMIN ─────────────────────────────────────────────
-function showAdminModal() { openModal('adminPwModal'); document.getElementById('adminPw').value=''; document.getElementById('adminPwErr').style.display='none'; setTimeout(()=>document.getElementById('adminPw').focus(),100); }
-function checkAdmin() {
-  if (document.getElementById('adminPw').value === 'AR2026!') {
-    closeModal('adminPwModal');
-    show('screen-admin');
-    showAdminTeam();
-    loadAdminGrid();
-  } else {
-    document.getElementById('adminPwErr').style.display = 'block';
-    document.getElementById('adminPw').value = '';
-  }
-}
-function exitAdmin() {
-  if (isAdmin) {
-    loadAdminHome();
-  } else {
-    show('screen-ar-hub');
-  }
-}
-function showAdminTeam() {
-  document.getElementById('adminTeamView').style.display = 'block';
-  document.getElementById('adminMemberView').style.display = 'none';
-  document.getElementById('adminBackBtn').style.display = 'none';
-}
-async function loadAdminGrid() {
-  let usersQuery = sb.from('users').select('*');
-  // Super admins (in SUPER_ADMIN_EMAILS) see all teams
-  // All other admins are scoped to their assigned teams from user_teams
-  if (!SUPER_ADMIN_EMAILS.includes(currentUser.email) && userTeams.length > 0) {
-    // Filter to only show users on teams this admin is assigned to
-    usersQuery = usersQuery.in('team', userTeams);
-  }
-  const { data: users, error: ue } = await usersQuery.order('last_name');
-  const { data: profiles, error: pe } = await sb.from('profiles').select('*');
-  
-  console.log('Admin grid — users returned:', users?.length, users?.map(u=>u.email));
-  if (ue) console.error('Users error:', ue.message);
-  if (pe) console.warn('Profiles error:', pe.message);
-  
-  const pm = {};
-  (profiles||[]).forEach(p => pm[p.user_id] = p);
-  const grid = document.getElementById('adminGrid');
-  if (!users||users.length===0) { 
-    grid.innerHTML = `<div style="grid-column:1/-1;background:#fff8f0;border:1px solid #f5cba7;border-radius:10px;padding:24px 28px;">
-      <p style="font-size:14px;font-weight:700;color:#c05c00;margin-bottom:8px;">⚠️ No users returned from Supabase</p>
-      <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px;">This is almost always a Row Level Security (RLS) policy issue. Run this SQL in your Supabase SQL Editor:</p>
-      <pre style="background:#1e3448;color:#5dd2f7;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;">drop policy if exists "users_own" on public.users;
-drop policy if exists "users_read_own" on public.users;
-drop policy if exists "users_read_admin" on public.users;
-drop policy if exists "users_write_own" on public.users;
-
-create policy "users_read_own" on public.users
-  for select using (auth.uid() = id);
-
-create policy "users_read_admin" on public.users
-  for select using (
-    (auth.jwt() ->> 'email') in (
-      'eliana.johnson@expresspros.com',
-      'brenda.killgore@expresspros.com'
-    )
-  );
-
-create policy "users_write_own" on public.users
-  for all using (auth.uid() = id);
-
--- Also fix profiles policies
-drop policy if exists "profiles_own" on public.profiles;
-drop policy if exists "profiles_read_own" on public.profiles;
-drop policy if exists "profiles_read_admin" on public.profiles;
-drop policy if exists "profiles_update_own" on public.profiles;
-drop policy if exists "profiles_write_admin" on public.profiles;
-
-create policy "profiles_read_own" on public.profiles
-  for select using (auth.uid() = user_id);
-
-create policy "profiles_read_admin" on public.profiles
-  for select using (
-    (auth.jwt() ->> 'email') in (
-      'eliana.johnson@expresspros.com',
-      'brenda.killgore@expresspros.com'
-    )
-  );
-
-create policy "profiles_write_admin" on public.profiles
-  for all using (
-    (auth.jwt() ->> 'email') in (
-      'eliana.johnson@expresspros.com',
-      'brenda.killgore@expresspros.com'
-    )
-  );
-
--- Also fix bulletin posts so admins can manage all
-drop policy if exists "bulletin_read" on public.bulletin_posts;
-drop policy if exists "bulletin_insert" on public.bulletin_posts;
-drop policy if exists "bulletin_delete_admin" on public.bulletin_posts;
-
-create policy "bulletin_read" on public.bulletin_posts
-  for select using (
-    auth.uid() = user_id or auth.uid() = author_id or
-    (auth.jwt() ->> 'email') in (
-      'eliana.johnson@expresspros.com',
-      'brenda.killgore@expresspros.com'
-    )
-  );
-
-create policy "bulletin_insert" on public.bulletin_posts
-  for insert with check (auth.uid() = author_id);
-
-create policy "bulletin_delete_admin" on public.bulletin_posts
-  for delete using (
-    (auth.jwt() ->> 'email') in (
-      'eliana.johnson@expresspros.com',
-      'brenda.killgore@expresspros.com'
-    )
-  );</pre>
-      <p style="font-size:12px;color:var(--gray-500);margin-top:12px;">After running, refresh and try again.</p>
-    </div>`;
-    return; 
-  }
-  grid.innerHTML = users.map(u => {
-    const pd = pm[u.id]; const lv = pd?.level||0;
-    return `<div class="admin-team-card" onclick="openMember('${u.id}','${u.first_name} ${u.last_name}','${u.job_title}')">
-      <div class="admin-avatar">${u.first_name[0]}${u.last_name[0]}</div>
-      <div>
-        <div class="admin-card-name">${u.first_name} ${u.last_name}</div>
-        <div class="admin-card-title">${u.job_title}</div>
-        <span class="admin-card-level ${lv?ADMIN_LV[lv]:'alv-none'}">${lv?LEVEL_LABELS[lv]:'No profile yet'}</span>
-      </div>
-    </div>`;
-  }).join('');
-}
-async function openMember(userId, name, title) {
-  currentAdminUserId = userId;
-  bulletinUserId = userId;
-  document.getElementById('adminMemberH').textContent = name;
-  document.getElementById('adminMemberSub').textContent = title;
-  const { data: pd, error } = await sb.from('profiles').select('*').eq('user_id', userId).single();
-  if (error && error.code !== 'PGRST116') {
-    // PGRST116 = no rows found (new user with no profile) - that's OK
-    toast('Cannot read profile — run the admin SQL policy fix in Supabase.', true);
-  }
-  fillFields(pd||{}, name, title);
-  updatePreview();
-  document.getElementById('adminTeamView').style.display = 'none';
-  document.getElementById('adminMemberView').style.display = 'block';
-  document.getElementById('adminBackBtn').style.display = 'flex';
-  document.getElementById('admin-content')?.scrollTo(0,0);
-}
-function fillFields(pd, name, title) {
-  document.getElementById('ef-name').value = pd.name||name||'';
-  document.getElementById('ef-title').value = pd.title||title||'';
-  document.getElementById('ef-level').value = pd.level||1;
-  document.getElementById('ef-hire').value = pd.hire_date||'';
-  document.getElementById('ef-last').value = pd.last_review_date||'';
-  document.getElementById('ef-next').value = pd.next_review_date||'';
-  document.getElementById('ef-s1').value = pd.strength_1||'';
-  document.getElementById('ef-s2').value = pd.strength_2||'';
-  document.getElementById('ef-grow').value = pd.growth_area||'';
-  document.getElementById('ef-n1').value = pd.review_notes_1||'';
-  document.getElementById('ef-n2').value = pd.review_notes_2||'';
-  [1,2,3].forEach(n => {
-    document.getElementById('ef-g'+n+'n').value = pd['goal_'+n+'_name']||'';
-    document.getElementById('ef-g'+n+'p').value = pd['goal_'+n+'_pct']||0;
-    document.getElementById('ef-g'+n+'t').value = pd['goal_'+n+'_target']||'';
-  });
-}
-function getFields() {
-  return {
-    name: document.getElementById('ef-name').value,
-    title: document.getElementById('ef-title').value,
-    level: parseInt(document.getElementById('ef-level').value),
-    hire_date: document.getElementById('ef-hire').value,
-    last_review_date: document.getElementById('ef-last').value,
-    next_review_date: document.getElementById('ef-next').value,
-    strength_1: document.getElementById('ef-s1').value,
-    strength_2: document.getElementById('ef-s2').value,
-    growth_area: document.getElementById('ef-grow').value,
-    review_notes_1: document.getElementById('ef-n1').value,
-    review_notes_2: document.getElementById('ef-n2').value,
-    goal_1_name: document.getElementById('ef-g1n').value, goal_1_pct: parseInt(document.getElementById('ef-g1p').value)||0, goal_1_target: document.getElementById('ef-g1t').value,
-    goal_2_name: document.getElementById('ef-g2n').value, goal_2_pct: parseInt(document.getElementById('ef-g2p').value)||0, goal_2_target: document.getElementById('ef-g2t').value,
-    goal_3_name: document.getElementById('ef-g3n').value, goal_3_pct: parseInt(document.getElementById('ef-g3p').value)||0, goal_3_target: document.getElementById('ef-g3t').value,
-  };
-}
-function updatePreview() {
-  const f = getFields();
-  document.getElementById('pv-name').textContent = f.name;
-  document.getElementById('pv-title').textContent = f.title;
-  document.getElementById('pv-title2').textContent = f.title;
-  document.getElementById('pv-hire').textContent = f.hire_date;
-  document.getElementById('pv-last').textContent = f.last_review_date;
-  document.getElementById('pv-next').textContent = f.next_review_date;
-  const lv = document.getElementById('pv-level');
-  lv.textContent = LEVEL_LABELS[f.level]; lv.className = 'pt-info-val pt-badge '+LEVEL_BADGE[f.level];
-  document.getElementById('pv-s1').textContent = f.strength_1;
-  document.getElementById('pv-s2').textContent = f.strength_2;
-  document.getElementById('pv-grow').textContent = f.growth_area;
-  document.getElementById('pv-n1').textContent = f.review_notes_1;
-  document.getElementById('pv-n2').textContent = f.review_notes_2;
-  [1,2,3].forEach(n => {
-    const pct = f['goal_'+n+'_pct'];
-    document.getElementById('pv-g'+n+'n').textContent = f['goal_'+n+'_name'];
-    document.getElementById('pv-g'+n+'p').textContent = pct+'%';
-    document.getElementById('pv-g'+n+'t').textContent = f['goal_'+n+'_target'];
-    const b = document.getElementById('pv-g'+n+'b');
-    b.style.width = pct+'%';
-    b.style.background = pct===100?'#22c55e':pct>=70?'var(--blue)':'#f59e0b';
-  });
-}
-async function saveProfile() {
-  if (!currentAdminUserId) return;
-  const pd = getFields();
-  pd.user_id = currentAdminUserId;
-  const { error } = await sb.from('profiles').upsert(pd, { onConflict:'user_id' });
-  if (error) { toast('Save failed: '+error.message, true); return; }
-  toast('Profile saved ✓');
-  await loadAdminGrid();
-}
-
-// ── ADD USER ──────────────────────────────────────────
-function openAddUserFromHome() {
-  // Pre-clear and open the add user modal from admin home
-  openAddUser();
-}
-
-function openAddUser() {
-  document.getElementById('addUserErr').style.display = 'none';
-  document.getElementById('addUserOk').style.display = 'none';
-  document.getElementById('addUserBtn').textContent = 'Create Account';
-  document.getElementById('addUserBtn').disabled = false;
-  openModal('addUserModal');
-}
-async function createUser() {
-  const fn=document.getElementById('nu-fn').value.trim(), ln=document.getElementById('nu-ln').value.trim();
-  const email=document.getElementById('nu-email').value.trim(), pw=document.getElementById('nu-pw').value.trim();
-  const title=document.getElementById('nu-title').value.trim(), team=document.getElementById('nu-team').value;
-  const sup=document.getElementById('nu-sup').value.trim(), office=document.getElementById('nu-office').value.trim();
-  const errEl=document.getElementById('addUserErr'), okEl=document.getElementById('addUserOk');
-  errEl.style.display='none'; okEl.style.display='none';
-  if (!fn||!ln||!email||!pw||!title||!sup) { errEl.textContent='Please fill in all required fields.'; errEl.style.display='block'; return; }
-  if (!email.endsWith('@expresspros.com')) { errEl.textContent='Email must be @expresspros.com.'; errEl.style.display='block'; return; }
-  if (pw.length<8) { errEl.textContent='Password must be at least 8 characters.'; errEl.style.display='block'; return; }
-  const btn=document.getElementById('addUserBtn'); btn.textContent='Creating...'; btn.disabled=true;
-  try {
-    const { data, error } = await sb.auth.signUp({ email, password: pw });
-    if (error) throw error;
-    const { error: pe } = await sb.from('users').insert({ id:data.user.id, email, first_name:fn, last_name:ln, job_title:title, team, supervisor:sup, office, is_admin:false });
-    if (pe) throw pe;
-    await sb.from('profiles').insert({ user_id:data.user.id, name:fn+' '+ln, title, level:1 });
-    okEl.innerHTML = `<strong>${fn} ${ln}</strong> has been added!<br/><span style="font-weight:400;font-size:12px;">They can log in at eeirelay.com with the password you set.</span>`;
-    okEl.style.display='block'; btn.textContent='✓ Created'; 
-    await loadAdminGrid();
-    ['nu-fn','nu-ln','nu-email','nu-title','nu-sup'].forEach(id => document.getElementById(id).value='');
-    document.getElementById('nu-pw').value='Relay2026!';
-  } catch(err) {
-    errEl.textContent = err.message||'Something went wrong.'; errEl.style.display='block';
-    btn.textContent='Create Account'; btn.disabled=false;
-  }
-}
-
-// ── BOOT ─────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  if (sessionStorage.getItem('relay_gate') === '1') {
-    show('screen-loading');
-    init().catch(() => show('screen-login'));
-  } else {
-    show('screen-gate');
-  }
-});
-</script>
-
-<!-- ══ SCHEDULE MEETING MODAL ══ -->
-<div class="modal-overlay" id="scheduleMeetingModal">
-  <div class="modal-box">
-    <div class="modal-header" style="background:linear-gradient(135deg,#1a3a5c,#1a7bc4);">
-      <div><div class="modal-header-eyebrow">Admin Calendar</div><h3>Schedule a Meeting</h3></div>
-      <button class="modal-close" onclick="closeModal('scheduleMeetingModal')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p>Schedule a 1:1 or Review with a team member. It will appear on their PD page under Upcoming Meetings.</p>
-      <div class="admin-field"><label>Team Member</label>
-        <select id="sm-member" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:6px;font-family:Inter,sans-serif;font-size:13px;color:var(--navy);background:#fff;outline:none;">
-          <option value="" disabled selected>Select team member…</option>
-        </select>
-      </div>
-      <div class="admin-field" style="margin-top:12px;"><label>Meeting Type</label>
-        <select id="sm-type" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:6px;font-family:Inter,sans-serif;font-size:13px;color:var(--navy);background:#fff;outline:none;">
-          <option value="1:1">1:1 Check-In</option>
-          <option value="Review">Performance Review</option>
-        </select>
-      </div>
-      <div class="admin-field" style="margin-top:12px;"><label>Subject / Notes</label>
-        <input type="text" id="sm-subject" placeholder="e.g. Mid-year check-in, Goal review…"/>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
-        <div class="admin-field"><label>Date</label><input type="date" id="sm-date"/></div>
-        <div class="admin-field"><label>Time</label>
-          <select id="sm-time" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:6px;font-family:Inter,sans-serif;font-size:13px;color:var(--navy);background:#fff;outline:none;">
-            <option>8:00 AM</option><option>8:30 AM</option><option>9:00 AM</option><option>9:30 AM</option>
-            <option>10:00 AM</option><option>10:30 AM</option><option>11:00 AM</option><option>11:30 AM</option>
-            <option>12:00 PM</option><option>12:30 PM</option><option>1:00 PM</option><option>1:30 PM</option>
-            <option>2:00 PM</option><option>2:30 PM</option><option>3:00 PM</option><option>3:30 PM</option>
-            <option>4:00 PM</option><option>4:30 PM</option><option>5:00 PM</option>
-          </select>
+      <!-- PD SUMMARY (non-admins only, hidden for admins) -->
+      <div class="section-block" id="memberPdSummary" style="display:none;">
+        <div class="section-label">Your Development</div>
+        <div class="ar-divider"></div>
+        <div id="homePdCard" style="background:linear-gradient(135deg,var(--navy) 0%,#005080 100%);border-radius:14px;padding:24px 28px;color:#fff;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#5dd2f7;margin-bottom:8px;">Personal Development Track</div>
+            <div style="font-size:20px;font-weight:900;margin-bottom:4px;" id="homePdName"></div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px;">
+              <span id="homePdLevel" style="font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;"></span>
+              <span style="font-size:12px;color:rgba(255,255,255,.5);" id="homePdNext"></span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;flex-shrink:0;">
+            <button onclick="goTo('view-personal-development')" style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M22 10v6M2 10l10-7 10 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v8a2 2 0 002 2h8a2 2 0 002-2v-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              See Full Profile
+            </button>
+            <button onclick="openRequestMeeting()" style="display:flex;align-items:center;gap:8px;background:var(--blue);border:none;color:#fff;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14v4M10 16h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              Request 1:1
+            </button>
+          </div>
         </div>
       </div>
-      <div class="modal-error" id="smErr"></div>
-      <div class="modal-success" id="smOk"></div>
-      <div class="modal-actions">
-        <button class="modal-cancel" onclick="closeModal('scheduleMeetingModal')">Cancel</button>
-        <button class="modal-submit" style="background:#1a7bc4;" onclick="scheduleMeeting()">Schedule Meeting</button>
-      </div>
-    </div>
-  </div>
-</div>
 
-<!-- ══ ACCEPT REQUEST MODAL ══ -->
-<div class="modal-overlay" id="acceptRequestModal">
-  <div class="modal-box">
-    <div class="modal-header" style="background:linear-gradient(135deg,#1a3a5c,#1a7bc4);">
-      <div><div class="modal-header-eyebrow">Accept Request</div><h3>Schedule This Meeting</h3></div>
-      <button class="modal-close" onclick="closeModal('acceptRequestModal')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="arRequestDetails" style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:16px;margin-bottom:18px;font-size:13px;color:var(--gray-600);line-height:1.7;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="admin-field"><label>Confirm Date</label><input type="date" id="ar-date"/></div>
-        <div class="admin-field"><label>Confirm Time</label>
-          <select id="ar-time" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:6px;font-family:Inter,sans-serif;font-size:13px;color:var(--navy);background:#fff;outline:none;">
-            <option>8:00 AM</option><option>8:30 AM</option><option>9:00 AM</option><option>9:30 AM</option>
-            <option>10:00 AM</option><option>10:30 AM</option><option>11:00 AM</option><option>11:30 AM</option>
-            <option>12:00 PM</option><option>12:30 PM</option><option>1:00 PM</option><option>1:30 PM</option>
-            <option>2:00 PM</option><option>2:30 PM</option><option>3:00 PM</option><option>3:30 PM</option>
-            <option>4:00 PM</option><option>4:30 PM</option><option>5:00 PM</option>
-          </select>
-        </div>
+      <!-- UPCOMING MEETINGS (non-admins only) -->
+      <div class="section-block" id="memberMeetingsHome" style="display:none;">
+        <div class="section-label">Schedule</div>
+        <h2 style="font-size:21px;font-weight:800;color:var(--navy);margin-bottom:6px;">Upcoming Meetings</h2>
+        <div class="ar-divider"></div>
+        <div id="homeMeetingsList"></div>
       </div>
-      <div class="modal-error" id="arErr"></div>
-      <div class="modal-actions">
-        <button class="modal-cancel" onclick="closeModal('acceptRequestModal')">Cancel</button>
-        <button class="modal-submit" style="background:#1a7bc4;" onclick="confirmAcceptRequest()">Confirm &amp; Schedule</button>
-      </div>
-    </div>
-  </div>
-</div>
 
-<!-- ══ REQUEST 1:1 MODAL (team member) ══ -->
-<div class="modal-overlay" id="requestMeetingModal">
-  <div class="modal-box">
-    <div class="modal-header" style="background:linear-gradient(135deg,var(--navy),#005080);">
-      <div><div class="modal-header-eyebrow">Request a Meeting</div><h3>Schedule PD Meeting</h3></div>
-      <button class="modal-close" onclick="closeModal('requestMeetingModal')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p>Request a 1:1 with your supervisor. Provide a subject and a few times that work for you — they'll confirm the final time.</p>
-      <div class="admin-field"><label>Subject</label>
-        <input type="text" id="req-subject" placeholder="e.g. Goal check-in, Career growth discussion…"/>
-      </div>
-      <div class="admin-field" style="margin-top:12px;"><label>Preferred Time 1 <span style="color:#ef4444;">*</span></label>
-        <input type="text" id="req-slot1" placeholder="e.g. Monday June 30 at 10:00 AM"/>
-      </div>
-      <div class="admin-field" style="margin-top:8px;"><label>Preferred Time 2</label>
-        <input type="text" id="req-slot2" placeholder="e.g. Tuesday July 1 at 2:00 PM"/>
-      </div>
-      <div class="admin-field" style="margin-top:8px;"><label>Preferred Time 3</label>
-        <input type="text" id="req-slot3" placeholder="e.g. Wednesday July 2 at 9:00 AM"/>
-      </div>
-      <div class="modal-error" id="reqErr"></div>
-      <div class="modal-success" id="reqOk" style="display:none;"></div>
-      <div class="modal-actions" id="reqActions">
-        <button class="modal-cancel" onclick="closeModal('requestMeetingModal')">Cancel</button>
-        <button class="modal-submit" id="reqBtn" onclick="submitMeetingRequest()">Send Request</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-</body>
-</html<
+<
