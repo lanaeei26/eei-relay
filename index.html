@@ -2024,7 +2024,19 @@ async function checkGate() {
     err.classList.remove('show');
     sessionStorage.setItem('relay_gate','1');
     show('screen-loading');
-    await init();
+    // Safety: if init takes too long or crashes, escape to login
+    const safetyTimer = setTimeout(() => {
+      console.warn('Init timeout - falling back to login');
+      show('screen-login');
+    }, 8000);
+    try {
+      await init();
+    } catch(e) {
+      console.error('Gate init error:', e);
+      show('screen-login');
+    } finally {
+      clearTimeout(safetyTimer);
+    }
   } else {
     err.classList.add('show');
     document.getElementById('gatePassword').value = '';
@@ -2038,7 +2050,7 @@ async function init() {
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       currentUser = session.user;
-      isAdmin = false; // will be set from profile below
+      isAdmin = false;
       await enterHub();
     } else {
       show('screen-login');
@@ -2046,6 +2058,10 @@ async function init() {
   } catch(e) {
     console.error('Init error:', e);
     show('screen-login');
+  } finally {
+    // Always hide loading no matter what
+    const loadScr = document.getElementById('screen-loading');
+    if (loadScr) loadScr.classList.remove('active');
   }
 }
 
@@ -2070,41 +2086,35 @@ let currentEnv = 'Accounts Receivable';
 
 async function enterHub() {
   try {
-  const { data: profile } = await sb.from('users').select('*').eq('id', currentUser.id).single();
-  currentProfile = profile;
+    // Load user profile
+    const { data: profile } = await sb.from('users').select('*').eq('id', currentUser.id).single();
+    currentProfile = profile;
+    isAdmin = profile?.is_admin === true;
 
-  // Set admin status from Supabase profile
-  isAdmin = profile?.is_admin === true;
+    // Set nav name
+    const firstName = profile?.first_name || '';
+    const greeting = firstName ? 'Hi, ' + firstName + '!' : '';
+    const navUser = document.getElementById('navUser');
+    const vmsNavUser = document.getElementById('vmsNavUser');
+    if (navUser) navUser.textContent = greeting;
+    if (vmsNavUser) vmsNavUser.textContent = greeting;
+    const ahNavUser = document.getElementById('ahNavUser');
+    if (ahNavUser) ahNavUser.textContent = firstName;
 
-  const firstName = profile?.first_name || '';
-  document.getElementById('navUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
-  document.getElementById('vmsNavUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
+    // Show admin controls
+    if (isAdmin) {
+      document.getElementById('adminHomeBtn')?.classList.remove('hidden');
+      document.getElementById('vmsAdminHomeBtn')?.classList.remove('hidden');
+    }
 
-  if (isAdmin) {
-    // Show admin controls - use optional chaining in case elements don't exist
-    document.getElementById('adminHomeBtn')?.classList.remove('hidden');
-    document.getElementById('vmsAdminHomeBtn')?.classList.remove('hidden');
-  }
+    // Fetch team assignments
+    const { data: teams } = await sb.from('user_teams').select('team').eq('user_id', currentUser.id);
+    userTeams = teams ? teams.map(t => t.team) : [];
+    if (userTeams.length === 0 && profile?.team) {
+      userTeams = [profile.team];
+    }
 
-  // Fetch team assignments
-  const { data: teams } = await sb.from('user_teams').select('team').eq('user_id', currentUser.id);
-  userTeams = teams ? teams.map(t => t.team) : [];
-
-  // Fallback: if no user_teams rows, use the team from users table
-  if (userTeams.length === 0 && profile?.team) {
-    userTeams = [profile.team];
-  }
-
-  // Build env options
-  buildEnvDropdowns();
-
-  // Show env switcher ONLY for admins
-  if (isAdmin) {
-    document.getElementById('envSwitcher')?.classList.remove('hidden');
-
-  }
-
-    // Route
+    // Route to correct screen
     if (isAdmin) {
       await loadAdminHome();
     } else {
@@ -2113,11 +2123,9 @@ async function enterHub() {
     }
   } catch(err) {
     console.error('enterHub error:', err);
-    // Fallback: show the hub anyway
     show('screen-ar-hub');
     goTo('view-ar-home');
   } finally {
-    // Always hide loading screen
     document.getElementById('screen-loading')?.classList.remove('active');
   }
 }
