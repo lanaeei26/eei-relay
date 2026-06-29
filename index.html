@@ -1517,12 +1517,9 @@ html,body{height:100%;font-family:"Inter",system-ui,sans-serif;color:var(--text)
 const SUPABASE_URL = 'https://opyhrslkpmxecyeerrlf.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9weWhyc2xrcG14ZWN5ZWVycmxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODc0MTgsImV4cCI6MjA5ODA2MzQxOH0.J71K3YTaes_7jUTJ9Klke_ZN5Vmmh489cSQ7wM0B8YE';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const ADMIN_EMAILS = ['eliana.johnson@expresspros.com','brenda.killgore@expresspros.com'];
-const SUPER_ADMIN_EMAILS = ['eliana.johnson@expresspros.com']; // can see ALL teams
-const ADMIN_TEAM_SCOPE = {
-  'brenda.killgore@expresspros.com': 'Accounts Receivable',
-  // add other team-scoped admins here as you expand
-};
+// Admin status is driven by is_admin field in Supabase users table
+// SUPER_ADMIN_EMAILS can see ALL teams; others are scoped to their assigned teams
+const SUPER_ADMIN_EMAILS = ['eliana.johnson@expresspros.com'];
 const LEVEL_LABELS = {1:'Level 1 — Developing',2:'Level 2 — Proficient',3:'Level 3 — Advanced'};
 const LEVEL_BADGE = {1:'pt-badge--1',2:'pt-badge--2',3:'pt-badge--3'};
 const ADMIN_LV = {1:'alv-1',2:'alv-2',3:'alv-3'};
@@ -1580,7 +1577,7 @@ async function init() {
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       currentUser = session.user;
-      isAdmin = ADMIN_EMAILS.includes(currentUser.email);
+      isAdmin = false; // will be set from profile below
       await enterHub();
     } else {
       show('screen-login');
@@ -1614,6 +1611,9 @@ async function enterHub() {
   const { data: profile } = await sb.from('users').select('*').eq('id', currentUser.id).single();
   currentProfile = profile;
 
+  // Set admin status from Supabase profile
+  isAdmin = profile?.is_admin === true;
+
   const firstName = profile?.first_name || '';
   document.getElementById('navUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
   document.getElementById('vmsNavUser').textContent = firstName ? 'Hi, ' + firstName + '!' : '';
@@ -1637,10 +1637,11 @@ async function enterHub() {
   // Build env options
   buildEnvDropdowns();
 
-  // Show switcher only if user has multiple envs
-  if (userTeams.length > 1) {
+  // Show env switcher only if user is admin OR has multiple team assignments
+  if (isAdmin || userTeams.length > 1) {
     document.getElementById('envSwitcher').classList.remove('hidden');
-    document.getElementById('envSwitcherVms').classList.remove('hidden');
+    const vmsEnvSw = document.getElementById('envSwitcherVms');
+    if (vmsEnvSw) vmsEnvSw.classList.remove('hidden');
   }
 
   // Admins go to admin home; regular users go to their env
@@ -1952,7 +1953,7 @@ async function doLogin() {
   const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
   if (error) { errEl.textContent = 'Incorrect email or password.'; errEl.style.display = 'block'; return; }
   currentUser = data.user;
-  isAdmin = ADMIN_EMAILS.includes(currentUser.email);
+  isAdmin = false; // will be set from profile below
   show('screen-loading');
   await enterHub();
 }
@@ -2170,10 +2171,11 @@ function showAdminTeam() {
 }
 async function loadAdminGrid() {
   let usersQuery = sb.from('users').select('*');
-  // Super admins see all teams; scoped admins only see their team
-  if (!SUPER_ADMIN_EMAILS.includes(currentUser.email)) {
-    const scope = ADMIN_TEAM_SCOPE[currentUser.email];
-    if (scope) usersQuery = usersQuery.eq('team', scope);
+  // Super admins (in SUPER_ADMIN_EMAILS) see all teams
+  // All other admins are scoped to their assigned teams from user_teams
+  if (!SUPER_ADMIN_EMAILS.includes(currentUser.email) && userTeams.length > 0) {
+    // Filter to only show users on teams this admin is assigned to
+    usersQuery = usersQuery.in('team', userTeams);
   }
   const { data: users, error: ue } = await usersQuery.order('last_name');
   const { data: profiles, error: pe } = await sb.from('profiles').select('*');
